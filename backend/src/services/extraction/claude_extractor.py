@@ -21,7 +21,7 @@ class ClaudeNarrativeExtractor:
     def __init__(self):
         """Initialize the extractor with Claude API client."""
         self.client = Anthropic(api_key=settings.anthropic_api_key)
-        self.model = "claude-3-5-sonnet-20241022"
+        self.model = "claude-3-sonnet-20240229"
 
     def extract_narrative_elements(self, text: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """

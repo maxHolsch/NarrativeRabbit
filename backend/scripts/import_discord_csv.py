@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.services.extraction.claude_extractor import ClaudeNarrativeExtractor
-from src.database.neo4j_repository import Neo4jRepository
+from src.db.neo4j_client import Neo4jClient
 from src.config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -126,11 +126,8 @@ def analyze_discord_conversations(csv_path: str, min_messages=3, max_conversatio
 
     # Initialize services
     extractor = ClaudeNarrativeExtractor()
-    repo = Neo4jRepository(
-        uri=settings.neo4j_uri,
-        username=settings.neo4j_username,
-        password=settings.neo4j_password
-    )
+    client = Neo4jClient()
+    client.connect()
 
     try:
         # Read and group messages
@@ -185,7 +182,28 @@ def analyze_discord_conversations(csv_path: str, min_messages=3, max_conversatio
 
                 # Save to database
                 logger.info("Saving to Neo4j...")
-                repo.add_story(story)
+
+                # Create story node
+                query = """
+                CREATE (s:Story)
+                SET s = $props
+                """
+                client.execute_write_query(query, {"props": story.to_graph_node()})
+
+                # Create Theme nodes and relationships if they don't exist
+                for theme in story.tags:
+                    theme_query = """
+                    MERGE (t:Theme {name: $theme_name})
+                    ON CREATE SET t.id = 'theme_' + toLower(replace($theme_name, ' ', '_')),
+                                  t.description = $theme_name
+                    WITH t
+                    MATCH (s:Story {id: $story_id})
+                    MERGE (s)-[:EXEMPLIFIES]->(t)
+                    """
+                    client.execute_write_query(theme_query, {
+                        "theme_name": theme,
+                        "story_id": story.id
+                    })
 
                 processed_count += 1
                 logger.info(f"✓ Successfully saved story {story.id}")
@@ -205,7 +223,7 @@ def analyze_discord_conversations(csv_path: str, min_messages=3, max_conversatio
         logger.info(f"Success rate: {processed_count/len(conversations)*100:.1f}%")
 
     finally:
-        repo.close()
+        client.close()
         logger.info("Database connection closed")
 
 
